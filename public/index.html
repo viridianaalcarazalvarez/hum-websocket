@@ -339,6 +339,9 @@
             initialMousePosition = { x: event.clientX, y: event.clientY };
             previousMousePosition = { x: event.clientX, y: event.clientY };
             document.body.style.cursor = 'grabbing';
+            
+            // Start fading out canvas when dragging starts
+            startCanvasFade();
         }
         
         function onMouseMove(event) {
@@ -355,6 +358,13 @@
             if (totalDistance > DRAG_THRESHOLD) {
                 hasDragged = true;
                 
+                // Clear canvas immediately when dragging is detected
+                if (canvasFadeAlpha > 0) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    stopCanvasFade();
+                    canvasFadeAlpha = 0;
+                }
+                
                 cameraRotation.y += deltaX * ROTATION_SPEED;
                 cameraRotation.x += deltaY * ROTATION_SPEED;
                 
@@ -369,6 +379,9 @@
             const wasDragging = hasDragged;
             isDragging = false;
             document.body.style.cursor = '';
+            
+            // Stop canvas fade if it's running
+            stopCanvasFade();
             
             // If user dragged, prevent the click event
             if (wasDragging) {
@@ -406,11 +419,16 @@
                 initialMousePosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
                 previousMousePosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
                 touchStartRotation = { x: cameraRotation.x, y: cameraRotation.y };
+                startCanvasFade();
             } else if (event.touches.length === 2) {
                 const dx = event.touches[0].clientX - event.touches[1].clientX;
                 const dy = event.touches[0].clientY - event.touches[1].clientY;
                 touchStartDistance = Math.sqrt(dx * dx + dy * dy);
                 hasDragged = true; // Pinch zoom is always a drag
+                // Clear canvas immediately for pinch zoom
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                stopCanvasFade();
+                canvasFadeAlpha = 0;
             }
         }
         
@@ -428,6 +446,13 @@
                 
                 if (totalDistance > DRAG_THRESHOLD) {
                     hasDragged = true;
+                    
+                    // Clear canvas immediately when dragging is detected
+                    if (canvasFadeAlpha > 0) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        stopCanvasFade();
+                        canvasFadeAlpha = 0;
+                    }
                     
                     cameraRotation.y = touchStartRotation.y + (event.touches[0].clientX - initialMousePosition.x) * ROTATION_SPEED;
                     cameraRotation.x = touchStartRotation.x + (event.touches[0].clientY - initialMousePosition.y) * ROTATION_SPEED;
@@ -451,6 +476,7 @@
         
         function onTouchEnd(event) {
             isDragging = false;
+            stopCanvasFade();
         }
 
         // Convert screen coordinates to Three.js world coordinates
@@ -869,6 +895,43 @@
         }
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
+        
+        // Canvas fade-out animation
+        let canvasFadeInterval = null;
+        let canvasFadeAlpha = 1.0;
+        
+        function startCanvasFade() {
+            // Clear any existing fade interval
+            if (canvasFadeInterval) {
+                clearInterval(canvasFadeInterval);
+            }
+            
+            // Start fading out the canvas
+            canvasFadeAlpha = 1.0;
+            canvasFadeInterval = setInterval(() => {
+                if (canvasFadeAlpha > 0) {
+                    // Create a fade effect by drawing a semi-transparent black rectangle
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.fillStyle = `rgba(0, 0, 0, 0.05)`;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.globalCompositeOperation = 'source-over';
+                    
+                    canvasFadeAlpha -= 0.05;
+                } else {
+                    // Clear the canvas completely when fade is done
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    clearInterval(canvasFadeInterval);
+                    canvasFadeInterval = null;
+                }
+            }, 16); // ~60fps
+        }
+        
+        function stopCanvasFade() {
+            if (canvasFadeInterval) {
+                clearInterval(canvasFadeInterval);
+                canvasFadeInterval = null;
+            }
+        }
 
         // WebSocket connection
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
