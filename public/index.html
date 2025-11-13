@@ -870,28 +870,6 @@
             const baseRadius = 30;
             const numLayers = 8;
             
-            // Create dimensional shadow layers (outer glow)
-            for (let shadowLayer = 0; shadowLayer < 4; shadowLayer++) {
-                const shadowRadius = baseRadius + 15 + (shadowLayer * 12);
-                const shadowOpacity = 0.15 - (shadowLayer * 0.03);
-                
-                const shadowGradient = ctx.createRadialGradient(x, y, baseRadius, x, y, shadowRadius);
-                if (color === '#fff') {
-                    shadowGradient.addColorStop(0, `rgba(255, 255, 255, ${shadowOpacity * 0.5})`);
-                    shadowGradient.addColorStop(0.5, `rgba(255, 255, 255, ${shadowOpacity * 0.3})`);
-                    shadowGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-                } else {
-                    shadowGradient.addColorStop(0, `rgba(0, 255, 0, ${shadowOpacity * 0.5})`);
-                    shadowGradient.addColorStop(0.5, `rgba(0, 255, 0, ${shadowOpacity * 0.3})`);
-                    shadowGradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
-                }
-                
-                ctx.fillStyle = shadowGradient;
-                ctx.beginPath();
-                ctx.arc(x, y, shadowRadius, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
             // Create main 3D sphere effect with multiple layers
             for (let i = 0; i < numLayers; i++) {
                 const radius = baseRadius - (i * 3);
