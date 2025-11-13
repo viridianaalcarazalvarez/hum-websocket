@@ -148,16 +148,31 @@
             border: 2px solid #fff;
             pointer-events: none;
             animation: ripple 0.6s ease-out;
+            transform: translate(-50%, -50%);
+            filter: blur(1px);
         }
 
         @keyframes ripple {
             0% {
-                transform: scale(0);
+                transform: translate(-50%, -50%) scale(0) translateZ(0);
                 opacity: 1;
+                box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.8),
+                            0 0 0 0 rgba(255, 255, 255, 0.6),
+                            0 0 0 0 rgba(255, 255, 255, 0.4);
+            }
+            50% {
+                transform: translate(-50%, -50%) scale(2) translateZ(20px);
+                opacity: 0.8;
+                box-shadow: 0 0 30px 10px rgba(255, 255, 255, 0.6),
+                            0 0 60px 20px rgba(255, 255, 255, 0.4),
+                            0 0 90px 30px rgba(255, 255, 255, 0.2);
             }
             100% {
-                transform: scale(3);
+                transform: translate(-50%, -50%) scale(4) translateZ(0);
                 opacity: 0;
+                box-shadow: 0 0 60px 20px rgba(255, 255, 255, 0),
+                            0 0 120px 40px rgba(255, 255, 255, 0),
+                            0 0 180px 60px rgba(255, 255, 255, 0);
             }
         }
 
@@ -505,36 +520,70 @@
         }
 
         function drawClick(x, y, color = '#fff', fromOtherUser = false) {
-            // Ripple effect
+            // Enhanced ripple effect with 3D appearance
             const effect = document.createElement('div');
             effect.className = 'click-effect';
             effect.style.left = x + 'px';
             effect.style.top = y + 'px';
             effect.style.borderColor = color;
+            effect.style.boxShadow = `0 0 20px ${color}, 0 0 40px ${color}, 0 0 60px ${color}`;
             document.body.appendChild(effect);
             setTimeout(() => effect.remove(), 600);
 
             // Set composite operation for blending
             ctx.globalCompositeOperation = 'screen';
             
-            // Create bleeding effect with multiple overlapping gradients
-            const baseRadius = 25;
-            const numLayers = 5;
+            const baseRadius = 30;
+            const numLayers = 8;
             
-            for (let i = 0; i < numLayers; i++) {
-                const radius = baseRadius + (i * 8);
-                const opacity = 0.3 - (i * 0.05);
+            // Create dimensional shadow layers (outer glow)
+            for (let shadowLayer = 0; shadowLayer < 4; shadowLayer++) {
+                const shadowRadius = baseRadius + 15 + (shadowLayer * 12);
+                const shadowOpacity = 0.15 - (shadowLayer * 0.03);
                 
-                const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+                const shadowGradient = ctx.createRadialGradient(x, y, baseRadius, x, y, shadowRadius);
                 if (color === '#fff') {
-                    gradient.addColorStop(0, `rgba(255, 255, 255, ${opacity})`);
-                    gradient.addColorStop(0.3, `rgba(255, 255, 255, ${opacity * 0.7})`);
-                    gradient.addColorStop(0.6, `rgba(255, 255, 255, ${opacity * 0.4})`);
+                    shadowGradient.addColorStop(0, `rgba(255, 255, 255, ${shadowOpacity * 0.5})`);
+                    shadowGradient.addColorStop(0.5, `rgba(255, 255, 255, ${shadowOpacity * 0.3})`);
+                    shadowGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                } else {
+                    shadowGradient.addColorStop(0, `rgba(0, 255, 0, ${shadowOpacity * 0.5})`);
+                    shadowGradient.addColorStop(0.5, `rgba(0, 255, 0, ${shadowOpacity * 0.3})`);
+                    shadowGradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
+                }
+                
+                ctx.fillStyle = shadowGradient;
+                ctx.beginPath();
+                ctx.arc(x, y, shadowRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Create main 3D sphere effect with multiple layers
+            for (let i = 0; i < numLayers; i++) {
+                const radius = baseRadius - (i * 3);
+                const opacity = 0.5 - (i * 0.05);
+                
+                // Create 3D sphere gradient (light from top-left)
+                const highlightX = x - radius * 0.3;
+                const highlightY = y - radius * 0.3;
+                const gradient = ctx.createRadialGradient(
+                    highlightX, highlightY, 0, 
+                    x, y, radius
+                );
+                
+                if (color === '#fff') {
+                    // White with highlight
+                    gradient.addColorStop(0, `rgba(255, 255, 255, ${opacity * 1.2})`);
+                    gradient.addColorStop(0.2, `rgba(255, 255, 255, ${opacity})`);
+                    gradient.addColorStop(0.5, `rgba(240, 240, 240, ${opacity * 0.8})`);
+                    gradient.addColorStop(0.7, `rgba(200, 200, 200, ${opacity * 0.6})`);
                     gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
                 } else {
-                    gradient.addColorStop(0, `rgba(0, 255, 0, ${opacity})`);
-                    gradient.addColorStop(0.3, `rgba(0, 255, 0, ${opacity * 0.7})`);
-                    gradient.addColorStop(0.6, `rgba(0, 255, 0, ${opacity * 0.4})`);
+                    // Green with highlight
+                    gradient.addColorStop(0, `rgba(100, 255, 100, ${opacity * 1.2})`);
+                    gradient.addColorStop(0.2, `rgba(0, 255, 0, ${opacity})`);
+                    gradient.addColorStop(0.5, `rgba(0, 220, 0, ${opacity * 0.8})`);
+                    gradient.addColorStop(0.7, `rgba(0, 180, 0, ${opacity * 0.6})`);
                     gradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
                 }
                 
@@ -544,12 +593,52 @@
                 ctx.fill();
             }
             
-            // Add some random bleeding spots around the main dot for organic effect
-            for (let j = 0; j < 3; j++) {
-                const offsetX = (Math.random() - 0.5) * 20;
-                const offsetY = (Math.random() - 0.5) * 20;
-                const bleedRadius = 15 + Math.random() * 10;
-                const bleedOpacity = 0.15 + Math.random() * 0.1;
+            // Add bright highlight spot (3D shine effect)
+            const highlightRadius = baseRadius * 0.4;
+            const highlightGradient = ctx.createRadialGradient(
+                x - baseRadius * 0.25, y - baseRadius * 0.25, 0,
+                x - baseRadius * 0.25, y - baseRadius * 0.25, highlightRadius
+            );
+            if (color === '#fff') {
+                highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+                highlightGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.5)');
+                highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            } else {
+                highlightGradient.addColorStop(0, 'rgba(150, 255, 150, 0.9)');
+                highlightGradient.addColorStop(0.5, 'rgba(0, 255, 0, 0.5)');
+                highlightGradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
+            }
+            ctx.fillStyle = highlightGradient;
+            ctx.beginPath();
+            ctx.arc(x - baseRadius * 0.25, y - baseRadius * 0.25, highlightRadius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add depth shadow (bottom-right)
+            const shadowOffset = baseRadius * 0.15;
+            const shadowGradient = ctx.createRadialGradient(
+                x + shadowOffset, y + shadowOffset, 0,
+                x + shadowOffset, y + shadowOffset, baseRadius * 0.6
+            );
+            if (color === '#fff') {
+                shadowGradient.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
+                shadowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            } else {
+                shadowGradient.addColorStop(0, 'rgba(0, 100, 0, 0.4)');
+                shadowGradient.addColorStop(1, 'rgba(0, 100, 0, 0)');
+            }
+            ctx.fillStyle = shadowGradient;
+            ctx.beginPath();
+            ctx.arc(x + shadowOffset, y + shadowOffset, baseRadius * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Add dimensional bleeding spots with depth
+            for (let j = 0; j < 4; j++) {
+                const angle = (j / 4) * Math.PI * 2;
+                const distance = 25 + Math.random() * 15;
+                const offsetX = Math.cos(angle) * distance;
+                const offsetY = Math.sin(angle) * distance;
+                const bleedRadius = 12 + Math.random() * 8;
+                const bleedOpacity = 0.2 + Math.random() * 0.15;
                 
                 const bleedGradient = ctx.createRadialGradient(
                     x + offsetX, y + offsetY, 0, 
@@ -558,9 +647,11 @@
                 
                 if (color === '#fff') {
                     bleedGradient.addColorStop(0, `rgba(255, 255, 255, ${bleedOpacity})`);
+                    bleedGradient.addColorStop(0.6, `rgba(255, 255, 255, ${bleedOpacity * 0.5})`);
                     bleedGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
                 } else {
                     bleedGradient.addColorStop(0, `rgba(0, 255, 0, ${bleedOpacity})`);
+                    bleedGradient.addColorStop(0.6, `rgba(0, 255, 0, ${bleedOpacity * 0.5})`);
                     bleedGradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
                 }
                 
