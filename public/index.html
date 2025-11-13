@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>hum with me</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            cursor: crosshair;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        #canvas {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #usernameModal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        }
+
+        #usernameModal.hidden {
+            display: none;
+        }
+
+        #usernameForm {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            min-width: 300px;
+        }
+
+        #usernameForm h2 {
+            margin-bottom: 20px;
+            color: #fff;
+        }
+
+        #usernameForm input {
+            width: 100%;
+            padding: 12px;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 5px;
+            color: #fff;
+            font-size: 16px;
+            margin-bottom: 15px;
+            outline: none;
+        }
+
+        #usernameForm input:focus {
+            border-color: #0f0;
+        }
+
+        #usernameForm button {
+            padding: 12px 30px;
+            background: #0f0;
+            border: none;
+            border-radius: 5px;
+            color: #000;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        #usernameForm button:hover {
+            background: #0a0;
+        }
+
+        #usernameError {
+            color: #f00;
+            font-size: 12px;
+            margin-top: 10px;
+            min-height: 20px;
+        }
+
+        #onlineUsers {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #333;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 1000;
+            min-width: 200px;
+            max-width: 300px;
+        }
+
+        #onlineUsers h3 {
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #0f0;
+        }
+
+        #userList {
+            list-style: none;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        #userList li {
+            padding: 5px 0;
+            border-bottom: 1px solid #222;
+        }
+
+        #userList li:last-child {
+            border-bottom: none;
+        }
+
+        #userCount {
+            color: #888;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .click-effect {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            pointer-events: none;
+            animation: ripple 0.6s ease-out;
+        }
+
+        @keyframes ripple {
+            0% {
+                transform: scale(0);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(3);
+                opacity: 0;
+            }
+        }
+
+    </style>
+</head>
+<body>
+    <div id="usernameModal">
+        <div id="usernameForm">
+            <h2>enter ur username</h2>
+            <input type="text" id="usernameInput" placeholder="here [:" maxlength="20" autocomplete="off">
+            <button id="usernameSubmit">join</button>
+            <div id="usernameError"></div>
+        </div>
+    </div>
+    <div id="onlineUsers">
+        <h3>online users</h3>
+        <ul id="userList"></ul>
+        <div id="userCount">0 users online</div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const usernameModal = document.getElementById('usernameModal');
+        const usernameInput = document.getElementById('usernameInput');
+        const usernameSubmit = document.getElementById('usernameSubmit');
+        const usernameError = document.getElementById('usernameError');
+        const userList = document.getElementById('userList');
+        const userCount = document.getElementById('userCount');
+
+        let currentUsername = null;
+        let isRegistered = false;
+        let lastOtherUserClick = null; // Store last click from other users
+        let lastMyClick = null; // Store last click from current user
+
+        // Audio context for piano sounds
+        let audioContext = null;
+        let reverbNode = null;
+        let userBaseNote = null; // Base note index for current user in C# minor scale
+        
+        // C# minor scale notes (C#, D#, E, F#, G#, A, B, C#)
+        const cSharpMinorScale = [
+            277.18,  // C#4
+            311.13,  // D#4
+            329.63,  // E4
+            369.99,  // F#4
+            415.30,  // G#4
+            440.00,  // A4
+            493.88,  // B4
+            554.37,  // C#5
+            622.25,  // D#5
+            659.25,  // E5
+            739.99,  // F#5
+            830.61,  // G#5
+            880.00,  // A5
+            987.77,  // B5
+            1108.73  // C#6
+        ];
+
+        // Initialize audio context and reverb
+        function initAudio() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                createReverb();
+            } catch (e) {
+                console.error('Audio context not supported:', e);
+            }
+        }
+
+        // Create reverb effect using delay nodes
+        function createReverb() {
+            if (!audioContext) return;
+            
+            // Create reverb using multiple delay lines
+            const reverbGain = audioContext.createGain();
+            reverbGain.gain.value = 0.4;
+            
+            const delays = [
+                { time: 0.03, feedback: 0.3 },
+                { time: 0.05, feedback: 0.25 },
+                { time: 0.07, feedback: 0.2 },
+                { time: 0.09, feedback: 0.15 }
+            ];
+            
+            const delayNodes = delays.map(delay => {
+                const delayNode = audioContext.createDelay(1);
+                const feedbackGain = audioContext.createGain();
+                const outputGain = audioContext.createGain();
+                
+                delayNode.delayTime.value = delay.time;
+                feedbackGain.gain.value = delay.feedback;
+                outputGain.gain.value = 0.25;
+                
+                delayNode.connect(feedbackGain);
+                feedbackGain.connect(delayNode);
+                delayNode.connect(outputGain);
+                outputGain.connect(reverbGain);
+                
+                return { input: delayNode, output: outputGain };
+            });
+            
+            reverbNode = {
+                input: audioContext.createGain(),
+                output: reverbGain,
+                delays: delayNodes
+            };
+            
+            reverbNode.input.connect(reverbGain);
+            delayNodes.forEach(d => reverbNode.input.connect(d.input));
+            reverbGain.connect(audioContext.destination);
+        }
+
+        // Get base note for a user (based on username hash, mapped to C# minor scale)
+        function getUserBaseNote(username) {
+            if (!username) return 0;
+            let hash = 0;
+            for (let i = 0; i < username.length; i++) {
+                hash = username.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return Math.abs(hash) % cSharpMinorScale.length;
+        }
+
+        // Get note from position (maps to C# minor scale)
+        function getNoteFromPosition(x, y, baseNoteIndex) {
+            // Map position to scale notes
+            const xNote = Math.floor((x / window.innerWidth) * 8) % 8; // 8 notes in octave
+            const yOctave = Math.floor((y / window.innerHeight) * 2); // 0-2 octaves
+            
+            const noteIndex = (baseNoteIndex + xNote + (yOctave * 8)) % cSharpMinorScale.length;
+            return cSharpMinorScale[noteIndex];
+        }
+
+        // Play rompler piano sound
+        function playPianoNote(frequency, duration = 1.2, volume = 0.4, color = '#fff') {
+            if (!audioContext) {
+                initAudio();
+                if (!audioContext) return;
+            }
+
+            // Resume audio context if suspended
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+
+            const now = audioContext.currentTime;
+            const masterGain = audioContext.createGain();
+            
+            // Create piano-like sound with multiple oscillators (fundamental + harmonics)
+            const oscillators = [];
+            const harmonics = [
+                { freq: 1.0, gain: 1.0 },    // Fundamental
+                { freq: 2.0, gain: 0.5 },    // Octave
+                { freq: 3.0, gain: 0.3 },    // Fifth + octave
+                { freq: 4.0, gain: 0.15 },  // Two octaves
+                { freq: 6.0, gain: 0.1 }    // Higher harmonic
+            ];
+
+            harmonics.forEach((harmonic, index) => {
+                const osc = audioContext.createOscillator();
+                const oscGain = audioContext.createGain();
+                
+                // Use different waveforms for richness
+                if (index === 0) {
+                    osc.type = 'sine'; // Fundamental is pure
+                } else if (index < 3) {
+                    osc.type = 'triangle'; // Mid harmonics
+                } else {
+                    osc.type = 'sine'; // High harmonics
+                }
+                
+                osc.frequency.setValueAtTime(frequency * harmonic.freq, now);
+                
+                // Piano-like envelope: quick attack, slow decay
+                const attackTime = 0.01 + (index * 0.005);
+                const decayTime = 0.1;
+                const sustainLevel = 0.3;
+                const releaseTime = duration * 0.7;
+                
+                oscGain.gain.setValueAtTime(0, now);
+                oscGain.gain.linearRampToValueAtTime(volume * harmonic.gain, now + attackTime);
+                oscGain.gain.linearRampToValueAtTime(volume * harmonic.gain * sustainLevel, now + attackTime + decayTime);
+                oscGain.gain.linearRampToValueAtTime(volume * harmonic.gain * sustainLevel, now + duration - releaseTime);
+                oscGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                
+                osc.connect(oscGain);
+                oscGain.connect(masterGain);
+                
+                osc.start(now);
+                osc.stop(now + duration);
+                
+                oscillators.push(osc);
+            });
+
+            // Add slight detuning for realism
+            oscillators.forEach((osc, i) => {
+                if (i > 0) {
+                    const detune = (Math.random() - 0.5) * 2; // ±1 cent
+                    osc.detune.setValueAtTime(detune, now);
+                }
+            });
+
+            // Connect to reverb
+            if (reverbNode) {
+                masterGain.connect(reverbNode.input);
+            }
+            masterGain.connect(audioContext.destination);
+        }
+
+        // Set canvas size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // WebSocket connection
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+        let ws = null;
+        let clickCount = 0;
+
+        function connect() {
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                // Don't hide modal yet - wait for username registration
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                } catch (e) {
+                    console.error('Error parsing message:', e);
+                }
+            };
+
+            ws.onclose = () => {
+                isRegistered = false;
+                usernameModal.classList.remove('hidden');
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        // Username form handling
+        function submitUsername() {
+            const username = usernameInput.value.trim();
+            if (!username) {
+                usernameError.textContent = 'Please enter a username';
+                return;
+            }
+
+            if (username.length < 1 || username.length > 20) {
+                usernameError.textContent = 'Username must be between 1 and 20 characters';
+                return;
+            }
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                usernameError.textContent = '';
+                ws.send(JSON.stringify({
+                    type: 'register',
+                    username: username
+                }));
+            }
+        }
+
+        usernameSubmit.addEventListener('click', submitUsername);
+        usernameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                submitUsername();
+            }
+        });
+
+        function updateUserList(users) {
+            userList.innerHTML = '';
+            users.forEach(username => {
+                const li = document.createElement('li');
+                li.textContent = username;
+                if (username === currentUsername) {
+                    li.style.color = '#0f0';
+                    li.textContent = username + ' (you)';
+                }
+                userList.appendChild(li);
+            });
+            userCount.textContent = `${users.length} user${users.length !== 1 ? 's' : ''} online`;
+        }
+
+        function handleMessage(data) {
+            if (data.type === 'registered') {
+                currentUsername = data.username;
+                isRegistered = true;
+                userBaseNote = getUserBaseNote(data.username);
+                usernameModal.classList.add('hidden');
+                usernameInput.value = '';
+                usernameError.textContent = '';
+                // Initialize audio when user registers
+                initAudio();
+            } else if (data.type === 'usernameError') {
+                usernameError.textContent = data.message;
+            } else if (data.type === 'userList') {
+                updateUserList(data.users);
+            } else if (data.type === 'userJoined') {
+                // Could show a notification here if desired
+                console.log(`${data.username} joined`);
+            } else if (data.type === 'userLeft') {
+                // Could show a notification here if desired
+                console.log(`${data.username} left`);
+            } else if (data.type === 'echo') {
+                // Handle echo from server
+                if (data.original && data.original.type === 'click') {
+                    // Visual feedback for echoed clicks
+                }
+            } else if (data.type === 'broadcast') {
+                // Handle broadcast from other clients
+                if (data.data && data.data.type === 'click') {
+                    const otherX = data.data.x;
+                    const otherY = data.data.y;
+                    const otherUsername = data.username;
+                    
+                    // Draw the other user's click
+                    drawClick(otherX, otherY, '#0f0', true);
+                    
+                    // If we have a previous click from us, draw a line
+                    if (lastMyClick) {
+                        drawLine(lastMyClick.x, lastMyClick.y, otherX, otherY, '#0f0');
+                    }
+                    
+                    // Play piano sound for other user's click
+                    if (otherUsername) {
+                        const otherBaseNote = getUserBaseNote(otherUsername);
+                        const frequency = getNoteFromPosition(otherX, otherY, otherBaseNote);
+                        playPianoNote(frequency, 1.2, 0.35, '#0f0');
+                    }
+                    
+                    // Update last other user click
+                    lastOtherUserClick = { x: otherX, y: otherY };
+                }
+            }
+        }
+
+        function drawClick(x, y, color = '#fff', fromOtherUser = false) {
+            // Ripple effect
+            const effect = document.createElement('div');
+            effect.className = 'click-effect';
+            effect.style.left = x + 'px';
+            effect.style.top = y + 'px';
+            effect.style.borderColor = color;
+            document.body.appendChild(effect);
+            setTimeout(() => effect.remove(), 600);
+
+            // Set composite operation for blending
+            ctx.globalCompositeOperation = 'screen';
+            
+            // Create bleeding effect with multiple overlapping gradients
+            const baseRadius = 25;
+            const numLayers = 5;
+            
+            for (let i = 0; i < numLayers; i++) {
+                const radius = baseRadius + (i * 8);
+                const opacity = 0.3 - (i * 0.05);
+                
+                const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+                if (color === '#fff') {
+                    gradient.addColorStop(0, `rgba(255, 255, 255, ${opacity})`);
+                    gradient.addColorStop(0.3, `rgba(255, 255, 255, ${opacity * 0.7})`);
+                    gradient.addColorStop(0.6, `rgba(255, 255, 255, ${opacity * 0.4})`);
+                    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                } else {
+                    gradient.addColorStop(0, `rgba(0, 255, 0, ${opacity})`);
+                    gradient.addColorStop(0.3, `rgba(0, 255, 0, ${opacity * 0.7})`);
+                    gradient.addColorStop(0.6, `rgba(0, 255, 0, ${opacity * 0.4})`);
+                    gradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
+                }
+                
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Add some random bleeding spots around the main dot for organic effect
+            for (let j = 0; j < 3; j++) {
+                const offsetX = (Math.random() - 0.5) * 20;
+                const offsetY = (Math.random() - 0.5) * 20;
+                const bleedRadius = 15 + Math.random() * 10;
+                const bleedOpacity = 0.15 + Math.random() * 0.1;
+                
+                const bleedGradient = ctx.createRadialGradient(
+                    x + offsetX, y + offsetY, 0, 
+                    x + offsetX, y + offsetY, bleedRadius
+                );
+                
+                if (color === '#fff') {
+                    bleedGradient.addColorStop(0, `rgba(255, 255, 255, ${bleedOpacity})`);
+                    bleedGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                } else {
+                    bleedGradient.addColorStop(0, `rgba(0, 255, 0, ${bleedOpacity})`);
+                    bleedGradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
+                }
+                
+                ctx.fillStyle = bleedGradient;
+                ctx.beginPath();
+                ctx.arc(x + offsetX, y + offsetY, bleedRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Reset composite operation
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        function drawLine(x1, y1, x2, y2, color = '#fff') {
+            // Set composite for blending
+            ctx.globalCompositeOperation = 'screen';
+            
+            // Draw multiple overlapping lines with gradients for bleeding effect
+            const numLines = 3;
+            const distance = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+            
+            for (let i = 0; i < numLines; i++) {
+                const lineWidth = 8 - (i * 2);
+                const opacity = 0.4 - (i * 0.1);
+                
+                // Create gradient along the line
+                const lineGradient = ctx.createLinearGradient(x1, y1, x2, y2);
+                if (color === '#fff') {
+                    lineGradient.addColorStop(0, `rgba(255, 255, 255, ${opacity})`);
+                    lineGradient.addColorStop(0.5, `rgba(255, 255, 255, ${opacity * 0.8})`);
+                    lineGradient.addColorStop(1, `rgba(255, 255, 255, ${opacity})`);
+                } else {
+                    lineGradient.addColorStop(0, `rgba(0, 255, 0, ${opacity})`);
+                    lineGradient.addColorStop(0.5, `rgba(0, 255, 0, ${opacity * 0.8})`);
+                    lineGradient.addColorStop(1, `rgba(0, 255, 0, ${opacity})`);
+                }
+                
+                ctx.strokeStyle = lineGradient;
+                ctx.lineWidth = lineWidth;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+            
+            // Add some bleeding spots along the line
+            const numBleeds = Math.floor(distance / 30);
+            for (let j = 0; j < numBleeds; j++) {
+                const t = (j + 1) / (numBleeds + 1);
+                const bleedX = x1 + (x2 - x1) * t + (Math.random() - 0.5) * 10;
+                const bleedY = y1 + (y2 - y1) * t + (Math.random() - 0.5) * 10;
+                const bleedRadius = 8 + Math.random() * 5;
+                
+                const bleedGradient = ctx.createRadialGradient(bleedX, bleedY, 0, bleedX, bleedY, bleedRadius);
+                if (color === '#fff') {
+                    bleedGradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+                    bleedGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                } else {
+                    bleedGradient.addColorStop(0, 'rgba(0, 255, 0, 0.2)');
+                    bleedGradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
+                }
+                
+                ctx.fillStyle = bleedGradient;
+                ctx.beginPath();
+                ctx.arc(bleedX, bleedY, bleedRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Reset composite operation
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        // Handle clicks
+        canvas.addEventListener('click', (e) => {
+            if (!isRegistered) return; // Don't allow clicks until registered
+            
+            const x = e.clientX;
+            const y = e.clientY;
+            clickCount++;
+
+            // Draw the click
+            drawClick(x, y, '#fff', false);
+            
+            // Play piano sound for your click
+            if (userBaseNote !== null) {
+                const frequency = getNoteFromPosition(x, y, userBaseNote);
+                playPianoNote(frequency, 1.2, 0.4, '#fff');
+            }
+            
+            // If we have a previous click from another user, draw a line
+            if (lastOtherUserClick) {
+                drawLine(lastOtherUserClick.x, lastOtherUserClick.y, x, y, '#fff');
+            }
+
+            // Update last my click
+            lastMyClick = { x: x, y: y };
+
+            // Send to server
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'click',
+                    x: x,
+                    y: y,
+                    timestamp: new Date().toISOString(),
+                    clickNumber: clickCount
+                }));
+            }
+        });
+
+        // Initialize audio on page load
+        initAudio();
+
+        // Connect on load
+        connect();
+    </script>
+</body>
+</html>
+
