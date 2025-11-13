@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>hum with me</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -27,6 +28,17 @@
             position: absolute;
             top: 0;
             left: 0;
+            z-index: 2;
+        }
+
+        #threejs-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 1;
         }
 
         #usernameModal {
@@ -192,6 +204,7 @@
         <ul id="userList"></ul>
         <div id="userCount">0 users online</div>
     </div>
+    <div id="threejs-container"></div>
     <canvas id="canvas"></canvas>
 
     <script>
@@ -208,6 +221,188 @@
         let isRegistered = false;
         let lastOtherUserClick = null; // Store last click from other users
         let lastMyClick = null; // Store last click from current user
+        
+        // Store all clicks for connections
+        const allClicks = []; // Array of {x, y, color, id, sphere, lines}
+        
+        // Three.js setup
+        let scene, camera, renderer;
+        let clickSpheres = []; // Store all 3D spheres
+        let connectionLines = []; // Store all connection lines
+        
+        function initThreeJS() {
+            const container = document.getElementById('threejs-container');
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x000000, 100, 1000);
+            
+            // Create camera (orthographic for 2D-like view with depth)
+            camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
+            camera.position.z = 500;
+            camera.lookAt(0, 0, 0);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+            
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            // Add directional light for 3D effect
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(-1, 1, 1);
+            scene.add(directionalLight);
+            
+            // Add point light for glow effect
+            const pointLight = new THREE.PointLight(0xffffff, 1, 1000);
+            pointLight.position.set(0, 0, 500);
+            scene.add(pointLight);
+            
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                // Rotate spheres slightly for dynamic effect
+                clickSpheres.forEach((sphereObj, index) => {
+                    if (sphereObj && sphereObj.rotation) {
+                        sphereObj.rotation.x += 0.01;
+                        sphereObj.rotation.y += 0.01;
+                    }
+                });
+                
+                renderer.render(scene, camera);
+            }
+            animate();
+            
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                const newWidth = window.innerWidth;
+                const newHeight = window.innerHeight;
+                camera.aspect = newWidth / newHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(newWidth, newHeight);
+            });
+        }
+        
+        // Convert screen coordinates to Three.js world coordinates
+        function screenToWorld(x, y) {
+            // Convert screen coordinates to normalized device coordinates (-1 to +1)
+            const mouse = new THREE.Vector2();
+            mouse.x = (x / window.innerWidth) * 2 - 1;
+            mouse.y = -(y / window.innerHeight) * 2 + 1;
+            
+            // Create a raycaster to project to a plane at z=0
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+            
+            // Intersect with a plane at z=0
+            const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+            const intersectPoint = new THREE.Vector3();
+            raycaster.ray.intersectPlane(plane, intersectPoint);
+            
+            return intersectPoint;
+        }
+        
+        // Create 3D sphere for click
+        function create3DSphere(x, y, color = '#ffffff') {
+            const worldPos = screenToWorld(x, y);
+            
+            // Create sphere geometry
+            const geometry = new THREE.SphereGeometry(15, 32, 32);
+            
+            // Create material with glow
+            const material = new THREE.MeshPhongMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 0.5,
+                shininess: 100,
+                transparent: true,
+                opacity: 0.9
+            });
+            
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.set(worldPos.x, worldPos.y, Math.random() * 50 - 25); // Random Z for depth
+            
+            // Add glow effect
+            const glowGeometry = new THREE.SphereGeometry(20, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.3
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            glow.position.copy(sphere.position);
+            scene.add(glow);
+            
+            scene.add(sphere);
+            
+            // Animate sphere appearance
+            sphere.scale.set(0, 0, 0);
+            const scaleTarget = 1;
+            const animateScale = () => {
+                if (sphere.scale.x < scaleTarget) {
+                    sphere.scale.x += 0.1;
+                    sphere.scale.y += 0.1;
+                    sphere.scale.z += 0.1;
+                    requestAnimationFrame(animateScale);
+                }
+            };
+            animateScale();
+            
+            return { sphere, glow, worldPos };
+        }
+        
+        // Create 3D line between two points
+        function create3DLine(x1, y1, x2, y2, color = '#ffffff') {
+            const pos1 = screenToWorld(x1, y1);
+            const pos2 = screenToWorld(x2, y2);
+            
+            // Add some Z variation for depth
+            pos1.z = Math.random() * 30 - 15;
+            pos2.z = Math.random() * 30 - 15;
+            
+            const geometry = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(pos1.x, pos1.y, pos1.z),
+                new THREE.Vector3(pos2.x, pos2.y, pos2.z)
+            ]);
+            
+            const material = new THREE.LineBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.6,
+                linewidth: 3
+            });
+            
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            
+            return line;
+        }
+        
+        // Connect all clicks with lines
+        function connectAllClicks() {
+            // Remove old connection lines
+            connectionLines.forEach(line => {
+                scene.remove(line);
+                line.geometry.dispose();
+                line.material.dispose();
+            });
+            connectionLines = [];
+            
+            // Connect each click to the previous one
+            for (let i = 1; i < allClicks.length; i++) {
+                const prev = allClicks[i - 1];
+                const curr = allClicks[i];
+                const line = create3DLine(prev.x, prev.y, curr.x, curr.y, curr.color);
+                connectionLines.push(line);
+            }
+        }
 
         // Audio context for piano sounds
         let audioContext = null;
@@ -501,9 +696,11 @@
                     // Draw the other user's click
                     drawClick(otherX, otherY, '#0f0', true);
                     
-                    // If we have a previous click from us, draw a line
+                    // Connect to previous click (either yours or another user's)
                     if (lastMyClick) {
                         drawLine(lastMyClick.x, lastMyClick.y, otherX, otherY, '#0f0');
+                    } else if (lastOtherUserClick) {
+                        drawLine(lastOtherUserClick.x, lastOtherUserClick.y, otherX, otherY, '#0f0');
                     }
                     
                     // Play piano sound for other user's click
@@ -529,6 +726,25 @@
             effect.style.boxShadow = `0 0 20px ${color}, 0 0 40px ${color}, 0 0 60px ${color}`;
             document.body.appendChild(effect);
             setTimeout(() => effect.remove(), 600);
+            
+            // Create 3D sphere if Three.js is initialized
+            if (scene && renderer) {
+                const threeColor = color === '#fff' ? '#ffffff' : '#00ff00';
+                const sphereData = create3DSphere(x, y, threeColor);
+                const clickId = Date.now() + Math.random();
+                
+                // Store click data
+                const clickData = {
+                    x, y, color, id: clickId,
+                    sphere: sphereData.sphere,
+                    glow: sphereData.glow
+                };
+                allClicks.push(clickData);
+                clickSpheres.push(sphereData.sphere);
+                
+                // Connect to previous clicks
+                connectAllClicks();
+            }
 
             // Set composite operation for blending
             ctx.globalCompositeOperation = 'screen';
@@ -666,6 +882,9 @@
         }
 
         function drawLine(x1, y1, x2, y2, color = '#fff') {
+            // Note: 3D lines are created by connectAllClicks() to avoid duplicates
+            // This function only handles 2D canvas lines
+            
             // Set composite for blending
             ctx.globalCompositeOperation = 'screen';
             
@@ -733,18 +952,20 @@
             const y = e.clientY;
             clickCount++;
 
-            // Draw the click
+            // Draw the click (this will also create 3D sphere and connect to previous clicks)
             drawClick(x, y, '#fff', false);
+            
+            // Also draw 2D canvas line for visual effect
+            if (lastMyClick) {
+                drawLine(lastMyClick.x, lastMyClick.y, x, y, '#fff');
+            } else if (lastOtherUserClick) {
+                drawLine(lastOtherUserClick.x, lastOtherUserClick.y, x, y, '#fff');
+            }
             
             // Play piano sound for your click
             if (userBaseNote !== null) {
                 const frequency = getNoteFromPosition(x, y, userBaseNote);
                 playPianoNote(frequency, 1.2, 0.4, '#fff');
-            }
-            
-            // If we have a previous click from another user, draw a line
-            if (lastOtherUserClick) {
-                drawLine(lastOtherUserClick.x, lastOtherUserClick.y, x, y, '#fff');
             }
 
             // Update last my click
@@ -764,6 +985,9 @@
 
         // Initialize audio on page load
         initAudio();
+        
+        // Initialize Three.js on page load
+        initThreeJS();
 
         // Connect on load
         connect();
