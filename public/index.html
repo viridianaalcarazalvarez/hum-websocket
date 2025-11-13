@@ -749,29 +749,41 @@
             }
         }
 
-        // Create reverb effect using delay nodes
+        // Create reverb effect using delay nodes with enhanced echo
         function createReverb() {
             if (!audioContext) return;
             
-            // Create reverb using multiple delay lines
+            // Create reverb using multiple delay lines with echo effect
             const reverbGain = audioContext.createGain();
-            reverbGain.gain.value = 0.4;
+            reverbGain.gain.value = 0.6; // Increased for more audible echo
             
-            const delays = [
+            // Short delays for reverb texture
+            const shortDelays = [
                 { time: 0.03, feedback: 0.3 },
                 { time: 0.05, feedback: 0.25 },
                 { time: 0.07, feedback: 0.2 },
                 { time: 0.09, feedback: 0.15 }
             ];
             
-            const delayNodes = delays.map(delay => {
-                const delayNode = audioContext.createDelay(1);
+            // Longer delays for echo effect
+            const echoDelays = [
+                { time: 0.15, feedback: 0.4 },  // First echo
+                { time: 0.25, feedback: 0.35 }, // Second echo
+                { time: 0.35, feedback: 0.3 },  // Third echo
+                { time: 0.5, feedback: 0.25 }    // Fourth echo
+            ];
+            
+            const allDelays = [...shortDelays, ...echoDelays];
+            
+            const delayNodes = allDelays.map(delay => {
+                const delayNode = audioContext.createDelay(2); // Increased max delay time
                 const feedbackGain = audioContext.createGain();
                 const outputGain = audioContext.createGain();
                 
                 delayNode.delayTime.value = delay.time;
                 feedbackGain.gain.value = delay.feedback;
-                outputGain.gain.value = 0.25;
+                // Higher output gain for echo delays
+                outputGain.gain.value = delay.time > 0.1 ? 0.4 : 0.25;
                 
                 delayNode.connect(feedbackGain);
                 feedbackGain.connect(delayNode);
