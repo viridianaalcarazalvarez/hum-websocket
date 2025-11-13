@@ -231,6 +231,17 @@
         let connectionLines = []; // Store all connection lines
         const BLOB_MERGE_DISTANCE = 80; // Distance threshold for blob merging
         const BLOB_BASE_SIZE = 20;
+        
+        // Camera orbit controls
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let initialMousePosition = { x: 0, y: 0 };
+        let cameraRotation = { x: 0, y: 0 }; // Rotation in radians
+        let cameraDistance = 500; // Distance from center
+        const ROTATION_SPEED = 0.005;
+        const ZOOM_SPEED = 0.1;
+        const DRAG_THRESHOLD = 5; // Pixels to move before considering it a drag
+        let hasDragged = false; // Track if user has dragged (to prevent click)
 
         // Initialize Three.js
         function initThreeJS() {
@@ -244,14 +255,16 @@
             
             // Create camera
             camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
-            camera.position.z = 500;
-            camera.lookAt(0, 0, 0);
+            updateCameraPosition();
             
             // Create renderer
             renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
             renderer.setSize(width, height);
             renderer.setPixelRatio(window.devicePixelRatio);
             container.appendChild(renderer.domElement);
+            
+            // Make container interactive for dragging
+            container.style.pointerEvents = 'auto';
             
             // Add ambient light
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
@@ -274,9 +287,23 @@
                 // Update blob morphing
                 updateBlobs();
                 
+                // Update camera position
+                updateCameraPosition();
+                
                 renderer.render(scene, camera);
             }
             animate();
+            
+            // Mouse drag controls (on entire page)
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+            document.addEventListener('wheel', onMouseWheel, { passive: false });
+            
+            // Touch controls
+            document.addEventListener('touchstart', onTouchStart, { passive: false });
+            document.addEventListener('touchmove', onTouchMove, { passive: false });
+            document.addEventListener('touchend', onTouchEnd);
             
             // Handle window resize
             window.addEventListener('resize', () => {
@@ -286,6 +313,144 @@
                 camera.updateProjectionMatrix();
                 renderer.setSize(newWidth, newHeight);
             });
+        }
+        
+        // Update camera position based on rotation
+        function updateCameraPosition() {
+            const x = Math.sin(cameraRotation.y) * Math.cos(cameraRotation.x) * cameraDistance;
+            const y = Math.sin(cameraRotation.x) * cameraDistance;
+            const z = Math.cos(cameraRotation.y) * Math.cos(cameraRotation.x) * cameraDistance;
+            
+            camera.position.set(x, y, z);
+            camera.lookAt(0, 0, 0);
+        }
+        
+        // Mouse event handlers
+        function onMouseDown(event) {
+            // Don't start drag if clicking on UI elements
+            if (event.target.closest('#usernameModal') || 
+                event.target.closest('#onlineUsers') ||
+                event.target.closest('#usernameForm')) {
+                return;
+            }
+            
+            isDragging = true;
+            hasDragged = false;
+            initialMousePosition = { x: event.clientX, y: event.clientY };
+            previousMousePosition = { x: event.clientX, y: event.clientY };
+            document.body.style.cursor = 'grabbing';
+        }
+        
+        function onMouseMove(event) {
+            if (!isDragging) return;
+            
+            const deltaX = event.clientX - previousMousePosition.x;
+            const deltaY = event.clientY - previousMousePosition.y;
+            
+            // Check if movement exceeds threshold
+            const totalDeltaX = event.clientX - initialMousePosition.x;
+            const totalDeltaY = event.clientY - initialMousePosition.y;
+            const totalDistance = Math.sqrt(totalDeltaX * totalDeltaX + totalDeltaY * totalDeltaY);
+            
+            if (totalDistance > DRAG_THRESHOLD) {
+                hasDragged = true;
+                
+                cameraRotation.y += deltaX * ROTATION_SPEED;
+                cameraRotation.x += deltaY * ROTATION_SPEED;
+                
+                // Limit vertical rotation to prevent flipping
+                cameraRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotation.x));
+            }
+            
+            previousMousePosition = { x: event.clientX, y: event.clientY };
+        }
+        
+        function onMouseUp(event) {
+            const wasDragging = hasDragged;
+            isDragging = false;
+            document.body.style.cursor = '';
+            
+            // If user dragged, prevent the click event
+            if (wasDragging) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            
+            // Reset hasDragged after a short delay to allow click event to check it
+            setTimeout(() => {
+                hasDragged = false;
+            }, 100);
+        }
+        
+        function onMouseWheel(event) {
+            event.preventDefault();
+            cameraDistance += event.deltaY * ZOOM_SPEED;
+            cameraDistance = Math.max(200, Math.min(1500, cameraDistance)); // Limit zoom range
+        }
+        
+        // Touch event handlers
+        let touchStartDistance = 0;
+        let touchStartRotation = { x: 0, y: 0 };
+        
+        function onTouchStart(event) {
+            // Don't start drag if touching UI elements
+            if (event.target.closest('#usernameModal') || 
+                event.target.closest('#onlineUsers') ||
+                event.target.closest('#usernameForm')) {
+                return;
+            }
+            
+            if (event.touches.length === 1) {
+                isDragging = true;
+                hasDragged = false;
+                initialMousePosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+                previousMousePosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+                touchStartRotation = { x: cameraRotation.x, y: cameraRotation.y };
+            } else if (event.touches.length === 2) {
+                const dx = event.touches[0].clientX - event.touches[1].clientX;
+                const dy = event.touches[0].clientY - event.touches[1].clientY;
+                touchStartDistance = Math.sqrt(dx * dx + dy * dy);
+                hasDragged = true; // Pinch zoom is always a drag
+            }
+        }
+        
+        function onTouchMove(event) {
+            event.preventDefault();
+            
+            if (event.touches.length === 1 && isDragging) {
+                const deltaX = event.touches[0].clientX - previousMousePosition.x;
+                const deltaY = event.touches[0].clientY - previousMousePosition.y;
+                
+                // Check if movement exceeds threshold
+                const totalDeltaX = event.touches[0].clientX - initialMousePosition.x;
+                const totalDeltaY = event.touches[0].clientY - initialMousePosition.y;
+                const totalDistance = Math.sqrt(totalDeltaX * totalDeltaX + totalDeltaY * totalDeltaY);
+                
+                if (totalDistance > DRAG_THRESHOLD) {
+                    hasDragged = true;
+                    
+                    cameraRotation.y = touchStartRotation.y + (event.touches[0].clientX - initialMousePosition.x) * ROTATION_SPEED;
+                    cameraRotation.x = touchStartRotation.x + (event.touches[0].clientY - initialMousePosition.y) * ROTATION_SPEED;
+                    
+                    cameraRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotation.x));
+                }
+                
+                previousMousePosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+            } else if (event.touches.length === 2) {
+                const dx = event.touches[0].clientX - event.touches[1].clientX;
+                const dy = event.touches[0].clientY - event.touches[1].clientY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                const zoomDelta = (touchStartDistance - distance) * 2;
+                cameraDistance += zoomDelta * ZOOM_SPEED;
+                cameraDistance = Math.max(200, Math.min(1500, cameraDistance));
+                
+                touchStartDistance = distance;
+            }
+        }
+        
+        function onTouchEnd(event) {
+            isDragging = false;
         }
 
         // Convert screen coordinates to Three.js world coordinates
@@ -943,36 +1108,6 @@
             ctx.arc(x + shadowOffset, y + shadowOffset, baseRadius * 0.6, 0, Math.PI * 2);
             ctx.fill();
             
-            // Add dimensional bleeding spots with depth
-            for (let j = 0; j < 4; j++) {
-                const angle = (j / 4) * Math.PI * 2;
-                const distance = 25 + Math.random() * 15;
-                const offsetX = Math.cos(angle) * distance;
-                const offsetY = Math.sin(angle) * distance;
-                const bleedRadius = 12 + Math.random() * 8;
-                const bleedOpacity = 0.2 + Math.random() * 0.15;
-                
-                const bleedGradient = ctx.createRadialGradient(
-                    x + offsetX, y + offsetY, 0, 
-                    x + offsetX, y + offsetY, bleedRadius
-                );
-                
-                if (color === '#fff') {
-                    bleedGradient.addColorStop(0, `rgba(255, 255, 255, ${bleedOpacity})`);
-                    bleedGradient.addColorStop(0.6, `rgba(255, 255, 255, ${bleedOpacity * 0.5})`);
-                    bleedGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-                } else {
-                    bleedGradient.addColorStop(0, `rgba(0, 255, 0, ${bleedOpacity})`);
-                    bleedGradient.addColorStop(0.6, `rgba(0, 255, 0, ${bleedOpacity * 0.5})`);
-                    bleedGradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
-                }
-                
-                ctx.fillStyle = bleedGradient;
-                ctx.beginPath();
-                ctx.arc(x + offsetX, y + offsetY, bleedRadius, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
             // Reset composite operation
             ctx.globalCompositeOperation = 'source-over';
         }
@@ -1040,6 +1175,7 @@
         // Handle clicks
         canvas.addEventListener('click', (e) => {
             if (!isRegistered) return; // Don't allow clicks until registered
+            if (hasDragged) return; // Don't create dot if user was dragging
             
             const x = e.clientX;
             const y = e.clientY;
